@@ -254,16 +254,26 @@ MRPROPER_FILES += $(boot)/Image $(boot)/Image-dtb $(boot)/Image.* $(boot)/dtbo.i
 
 ifeq ($(KBUILD_EXTMOD),)
 # We need to generate vdso-offsets.h before compiling certain files in kernel/.
-# In order to do that, we should use the archprepare target, but we can't since
-# asm-offsets.h is included in some files used to generate vdso-offsets.h, and
-# asm-offsets.h is built in prepare0, for which archprepare is a dependency.
-# Therefore we need to generate the header after prepare0 has been made, hence
-# this hack.
+# This ensures proper dependency ordering between prepare0, asm-offsets.h, and vdso-offsets.h
 prepare: vdso_prepare
+
+.NOTPARALLEL: vdso_prepare
 vdso_prepare: prepare0
-	$(Q)$(MAKE) $(build)=arch/arm64/kernel/vdso include/generated/vdso-offsets.h
-	$(if $(CONFIG_VDSO32),$(Q)$(MAKE) $(build)=arch/arm64/kernel/vdso32 \
-					  include/generated/vdso32-offsets.h)
+	@if [ "$(CONFIG_VDSO32)" = "y" ] && [ -z "$(CROSS_COMPILE_COMPAT)" ]; then \
+		echo "Error: CROSS_COMPILE_COMPAT must be set for 32-bit VDSO"; exit 1; \
+	fi
+	$(Q)if ! $(MAKE) $(build)=arch/arm64/kernel/vdso include/generated/vdso-offsets.h; then \
+		echo "Failed to generate 64-bit VDSO offsets"; exit 1; \
+	fi
+	$(if $(CONFIG_VDSO32), \
+		$(Q)if ! $(MAKE) $(build)=arch/arm64/kernel/vdso32 include/generated/vdso32-offsets.h; then \
+			echo "Failed to generate 32-bit VDSO offsets"; exit 1; \
+		fi \
+	)
+
+# Explicit dependencies to prevent race conditions
+arch/arm64/kernel/vdso/vdso.lds: include/generated/vdso-offsets.h
+arch/arm64/kernel/vdso/vdso.so.dbg: include/generated/vdso-offsets.h
 endif
 
 define archhelp
