@@ -32,19 +32,26 @@ KASAN_SANITIZE := n
 UBSAN_SANITIZE := n
 KCOV_INSTRUMENT := n
 
-# Workaround for bare-metal (ELF) toolchains that neglect to pass -shared
-# down to collect2, resulting in silent corruption of the vDSO image.
+# Workaround for bare-metal (ELF) toolchains
 ccflags-y += -Wl,-shared
 
 obj-y += vdso.o
 extra-y += vdso.lds
 CPPFLAGS_vdso.lds += -P -C -U$(ARCH)
 
+# Explicit rule to generate vdso.lds from vdso.lds.S
+$(obj)/vdso.lds: $(src)/vdso.lds.S FORCE
+	$(call if_changed_dep,cpp_lds)
+
+define cmd_cpp_lds
+	$(CPP) $(CPPFLAGS_vdso.lds) -o $@ $<
+endef
+
 # Force dependency (incbin is bad)
 $(obj)/vdso.o : $(obj)/vdso.so
 
 # Link rule for the .so file, .lds has to be first
-$(obj)/vdso.so.dbg: $(src)/vdso.lds $(obj-vdso)
+$(obj)/vdso.so.dbg: $(obj)/vdso.lds $(obj-vdso)
 	$(call if_changed,vdsold)
 
 # Strip rule for the .so file
@@ -86,3 +93,4 @@ vdso.so: $(obj)/vdso.so.dbg
 	$(call cmd,vdso_install)
 
 vdso_install: vdso.so
+.PHONY: vdso_install
